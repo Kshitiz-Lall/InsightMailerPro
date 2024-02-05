@@ -1,0 +1,6 @@
+/reducers
+      feature1Reducer.js
+      feature2Reducer.js
+      index.js
+
+/reducers: Reducers for each feature and a root reducer (index.js) combining them.

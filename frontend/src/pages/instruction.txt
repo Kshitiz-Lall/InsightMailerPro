@@ -1,0 +1,4 @@
+/pages
+    HomePage.js
+    AboutPage.js
+    ContactPage.js
