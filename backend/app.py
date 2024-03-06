@@ -3,10 +3,14 @@ from flask_cors import CORS
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import create_engine, func
-from model import User, Task, WeeklySummary, MonthlySummary, YearlySummary, TaskGeneratedByAi, Project, UserProject
+from model import User, Task, WeeklySummary, MonthlySummary, YearlySummary, TaskGeneratedByAi, Project, UserProject, Organization
 from datetime import datetime, timedelta
 from werkzeug.security import check_password_hash
 import jwt
+from passlib.hash import bcrypt  # Importing bcrypt for password hashing
+from serialize import serialize_user
+import base64
+import json
 
 
 app = Flask(__name__)
@@ -27,24 +31,26 @@ def login():
         data = request.json
         email = data.get('email')
         password = data.get('password')
-        
+        print('email', email, 'password', password)
         # Check if email and password are provided
         if not email or not password:
             return jsonify({"error": "Email and password are required"}), 400
         
         # Retrieve user from database
         user = session.query(User).filter(User.personalEmail == email).first()
-        
+        print('user', user)
         # Verify user existence and password correctness
-        if user and check_password_hash(user.password, password):
+        if user and bcrypt.verify(password, user.password):
             # Generate JWT token
             token = jwt.encode({
                 'user_id': user.userId,
                 'exp': datetime.utcnow() + timedelta(days=1)  # Token expiration time
             }, SECRET_KEY, algorithm='HS256')
             
+            serialized_user = serialize_user(user)
             session.close()
-            return jsonify({"token": token, "userData" : user}), 200
+
+            return jsonify({"token": token, "userData" : serialized_user}), 200
         else:
             session.close()
             return jsonify({"error": "Invalid email or password"}), 401
@@ -54,27 +60,81 @@ def login():
     
 
 # Define APIs for User
-@app.route('/users', methods=['GET'])
+@app.route('/getAllUsers', methods=['GET'])
 def get_users():
     session = Session()
     users = session.query(User).all()
+    serialized_users = [serialize_user(user) for user in users]
     session.close()
-    return jsonify([user.serialize() for user in users])
+    return jsonify(serialized_users)
 
-@app.route('/users', methods=['POST'])
+
+# Update the create_user function to include the additional validation
+@app.route('/registerUser', methods=['POST'])
 def create_user():
     session = Session()
-    data = request.json
     try:
-        new_user = User(**data)
+        # Getting form data
+        profile_picture = request.files.get('profilePicture')
+        json_data = request.form.get('jsonData')
+        
+        # Convert the JSON data string back to a dictionary
+        data = json.loads(json_data)
+
+        # Check if organization exists
+        organization_name = data.get('companyName')
+        
+        organization = session.query(Organization).filter(Organization.name == organization_name).first()
+
+        if organization is None:
+            # Organization does not exist, create a new one
+            organization = Organization(name=organization_name, address=data.get('organizationAddress'))
+            session.add(organization)
+            session.commit()  # Commit the organization creation before proceeding
+
+        # Check if employee ID is unique within the organization
+        existing_user_with_employee_id = session.query(User).join(Organization).filter(
+            User.employeeID == data.get('employeeID'), Organization.name == organization_name).first()
+        if existing_user_with_employee_id:
+            session.close()
+            return 'Employee ID must be unique within the organization', 400
+        
+        # Hash the password
+        hashed_password = bcrypt.hash(data.get('password'))
+
+        # Base64 encode the profile picture
+        profile_picture_base64 = None
+        if profile_picture:
+            profile_picture_base64 = base64.b64encode(profile_picture.read()).decode('utf-8')
+
+        # Create a new user linked to the organization
+        new_user = User(
+            name=data.get('name'),
+            companyName=organization_name,
+            mobileNumber=data.get('mobileNumber'),
+            companyEmail=data.get('companyEmail'),
+            personalEmail=data.get('personalEmail'),
+            password=hashed_password,
+            profilePictureUrl=profile_picture_base64,
+            dob=data.get('dob'),
+            address=data.get('address'),
+            employeeID=data.get('employeeID'),
+            organization=organization
+        )
+
         session.add(new_user)
         session.commit()
+
+        # Return the user data along with the organization details
+        response_data = serialize_user(new_user)
+
         session.close()
-        return jsonify(new_user.serialize()), 201
+        return jsonify(response_data), 201
     except IntegrityError:
         session.rollback()
         session.close()
         return 'User already exists', 400
+
 
 @app.route('/users/<int:user_id>', methods=['GET'])
 def get_user(user_id):
@@ -266,86 +326,7 @@ def generate_monthly_summary(user_id):
         return jsonify({"error": str(e)}), 500
     
 
-    # Define API for generating yearly summary
-@app.route('/yearly-summary/<int:user_id>', methods=['POST'])
-def generate_yearly_summary(user_id):
-    session = Session()
-    try:
-        # Get the current year's tasks
-        today = datetime.today()
-        first_day_of_year = today.replace(month=1, day=1)
-        last_day_of_year = today.replace(month=12, day=31)
 
-        tasks = session.query(Task).filter(
-            Task.userId == user_id,
-            func.date(Task.taskDate) >= first_day_of_year,
-            func.date(Task.taskDate) <= last_day_of_year
-        ).all()
-        
-        # Process tasks to generate summary
-        summary = ""
-        for task in tasks:
-            summary += f"- {task.taskName}\n"
-        
-        # Save the generated summary in YearlySummary table
-        yearly_summary = YearlySummary(
-            generatedSummary=summary,
-            fromDate=first_day_of_year,
-            endDate=last_day_of_year,
-            monthName=first_day_of_year.strftime("%B"),
-            userId=user_id
-        )
-        session.add(yearly_summary)
-        session.commit()
-        session.close()
-        
-        return jsonify({"message": "Yearly summary generated successfully"}), 201
-    except Exception as e:
-        session.rollback()
-        session.close()
-        return jsonify({"error": str(e)}), 500
-    
-
-    # Define API for generating monthly summary
-@app.route('/monthly-summary/<int:user_id>', methods=['POST'])
-def generate_monthly_summary(user_id):
-    session = Session()
-    try:
-        # Get the current month's tasks
-        today = datetime.today()
-        first_day_of_month = today.replace(day=1)
-        last_day_of_month = today.replace(day=28) + timedelta(days=4)
-        last_day_of_month = last_day_of_month - timedelta(days=last_day_of_month.day)
-
-        tasks = session.query(Task).filter(
-            Task.userId == user_id,
-            func.date(Task.taskDate) >= first_day_of_month,
-            func.date(Task.taskDate) <= last_day_of_month
-        ).all()
-        
-        # Process tasks to generate summary
-        summary = ""
-        for task in tasks:
-            summary += f"- {task.taskName}\n"
-        
-        # Save the generated summary in MonthlySummary table
-        monthly_summary = MonthlySummary(
-            generatedSummary=summary,
-            fromDate=first_day_of_month,
-            endDate=last_day_of_month,
-            monthName=first_day_of_month.strftime("%B"),
-            userId=user_id
-        )
-        session.add(monthly_summary)
-        session.commit()
-        session.close()
-        
-        return jsonify({"message": "Monthly summary generated successfully"}), 201
-    except Exception as e:
-        session.rollback()
-        session.close()
-        return jsonify({"error": str(e)}), 500
-    
 # Define API for generating yearly summary
 @app.route('/yearly-summary/<int:user_id>', methods=['POST'])
 def generate_yearly_summary(user_id):
