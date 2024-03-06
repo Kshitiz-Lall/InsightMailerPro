@@ -1,4 +1,0 @@
-/components
-    /Common
-      Button.js
-      Input.js

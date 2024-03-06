@@ -1,7 +1,17 @@
-export default function App() {
+import { ThemeProvider } from '@emotion/react';
+import { RouterProvider } from 'react-router-dom';
+import './App.css';
+import { Theme } from './Theme';
+import Route from './Utils/Route';
+
+function App() {
   return (
-    <h1 className="text-2xl font-bold underline ">
-      Hello world!
-    </h1>
-  )
+    <>
+      <ThemeProvider theme={Theme}>
+        <RouterProvider router={Route} />
+      </ThemeProvider>
+    </>
+  );
 }
+
+export default App;
