@@ -2,6 +2,7 @@ import { createBrowserRouter } from 'react-router-dom';
 import LoginPage from '../../screens/Login';
 import RegistrationPage from '../../screens/Registration';
 import NotFoundPage from '../../screens/ExceptionPages/NotFound';
+import { Dashboard } from '../../screens/Dashboard';
 
 const routes = [
   {
@@ -11,6 +12,10 @@ const routes = [
   {
     path: '/register',
     element: <RegistrationPage />
+  },
+  {
+    path: '/dashboard',
+    element: <Dashboard />
   },
   {
     path: '*',
