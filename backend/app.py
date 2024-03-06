@@ -135,17 +135,55 @@ def create_user():
         session.close()
         return 'User already exists', 400
 
+@app.route('/updateProfilePicture/<int:user_id>', methods=['PUT'])
+def update_profile_picture(user_id):
+    session = Session()
+    try:
+        # Get the user by user ID
+        user = session.query(User).get(user_id)
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+        
+        # Get the profile picture file from the request
+        profile_picture = request.files.get('profilePicture')
+        if not profile_picture:
+            return jsonify({'error': 'Profile picture file is missing'}), 400
+        
+        # Base64 encode the profile picture
+        profile_picture_base64 = base64.b64encode(profile_picture.read()).decode('utf-8')
 
-@app.route('/users/<int:user_id>', methods=['GET'])
+        # Update the user's profile picture URL
+        user.profilePictureUrl = profile_picture_base64
+        
+        # Commit the changes to the database
+        session.commit()
+
+        # Return success response
+        return jsonify({'message': 'Profile picture updated successfully'}), 200
+    except Exception as e:
+        session.rollback()
+        return jsonify({'error': str(e)}), 500
+    finally:
+        session.close()
+
+
+@app.route('/getUser/<int:user_id>', methods=['GET'])
 def get_user(user_id):
     session = Session()
-    user = session.query(User).get(user_id)
-    session.close()
-    if not user:
-        return 'User not found', 404
-    return jsonify(user.serialize())
 
-@app.route('/users/<int:user_id>', methods=['PUT'])
+    try:
+        user = session.query(User).get(user_id)
+        print('user', user)
+        if not user:
+            return 'User not found', 404
+    
+        userData = serialize_user(user)
+        return jsonify(userData)
+    finally:
+        session.close()
+
+
+@app.route('/updateUserProfile/<int:user_id>', methods=['PUT'])
 def update_user(user_id):
     session = Session()
     user = session.query(User).get(user_id)
@@ -159,7 +197,7 @@ def update_user(user_id):
     session.close()
     return jsonify(user.serialize())
 
-@app.route('/users/<int:user_id>', methods=['DELETE'])
+@app.route('/deleteUser/<int:user_id>', methods=['DELETE'])
 def delete_user(user_id):
     session = Session()
     user = session.query(User).get(user_id)
