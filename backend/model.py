@@ -1,5 +1,5 @@
 from sqlalchemy import Column, Integer, String, DateTime, Text, ForeignKey, Boolean, JSON
-from sqlalchemy.orm import declarative_base
+from sqlalchemy.orm import declarative_base, relationship
 
 Base = declarative_base()
 
@@ -12,13 +12,27 @@ class User(Base):
     name = Column(String)
     companyName = Column(String)
     mobileNumber = Column(String)
-    companyEmail = Column(String)
-    personalEmail = Column(String)
+    companyEmail = Column(String, unique=True)
+    personalEmail = Column(String, unique=True)
     password = Column(String)
-    profilePictureUrl = Column(String)
+    profilePictureUrl = Column(Text)
     dob = Column(DateTime)
     address = Column(String)
     employeeID = Column(Integer)
+    # Define relationship to Organization
+    organization_id = Column(Integer, ForeignKey('organization.organizationId'))
+    organization = relationship("Organization", back_populates="users")
+
+    
+
+# Define Organization table
+class Organization(Base):
+    __tablename__ = 'organization'
+    organizationId = Column(Integer, primary_key=True)
+    name = Column(String)
+    address = Column(String)
+    # Define relationship to User
+    users = relationship("User", back_populates="organization")
 
 # Define Task table
 class Task(Base):
